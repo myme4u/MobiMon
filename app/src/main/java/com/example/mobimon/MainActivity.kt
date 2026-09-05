@@ -45,6 +45,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.mobimon.ui.theme.MobiMonTheme
 
 enum class CharacterType(val label: String, val color: Color) {
@@ -58,8 +59,17 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* 알림 권한이 거부되어도 캐릭터는 계속 돌아다닐 수 있어 별도 처리하지 않음 */ }
 
+    private var keepSplashOnScreen = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splashScreen.setKeepOnScreenCondition { keepSplashOnScreen }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+            { keepSplashOnScreen = false },
+            SPLASH_DISPLAY_DURATION_MS
+        )
+
         enableEdgeToEdge()
         setContent {
             MobiMonTheme {
@@ -113,6 +123,10 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
     }
+
+    companion object {
+        private const val SPLASH_DISPLAY_DURATION_MS = 2000L
+    }
 }
 
 @Composable
@@ -135,7 +149,7 @@ fun MainScreen(
     ) {
         if (isRoaming) {
             Text(
-                text = "'${selectedCharacter.label}'이(가) 화면 위를 돌아다니고 있어요",
+                text = "'${selectedCharacter.label}'이(가) 원형 영역 안에서 돌아다니고 있어요",
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
@@ -192,7 +206,7 @@ fun MainScreen(
             }
 
             Text(
-                text = "버튼을 누르면 '다른 앱 위에 표시' 권한을 확인한 뒤, 앱이 내려가고 캐릭터가 화면 위를 돌아다녀요.",
+                text = "버튼을 누르면 '다른 앱 위에 표시' 권한을 확인한 뒤, 앱이 내려가고 캐릭터가 동그란 원 안에서만 돌아다녀요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

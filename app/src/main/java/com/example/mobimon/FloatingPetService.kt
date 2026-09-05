@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
@@ -22,7 +23,7 @@ import kotlin.random.Random
 class FloatingPetService : Service() {
 
     private lateinit var windowManager: WindowManager
-    private var overlayView: TriangleOverlayView? = null
+    private var overlayView: CircleBoundedPetView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
 
     private val handler = Handler(Looper.getMainLooper())
@@ -31,6 +32,7 @@ class FloatingPetService : Service() {
     private var targetX = 0f
     private var targetY = 0f
     private var elapsedMs = 0L
+    private var maxRadiusPx = 0f
 
     private val moveRunnable = object : Runnable {
         override fun run() {
@@ -65,6 +67,7 @@ class FloatingPetService : Service() {
         handler.removeCallbacks(moveRunnable)
         overlayView?.let { runCatching { windowManager.removeView(it) } }
         overlayView = null
+        layoutParams = null
     }
 
     private fun showOrUpdateOverlay(character: CharacterType) {
@@ -75,21 +78,23 @@ class FloatingPetService : Service() {
         }
 
         val density = resources.displayMetrics.density
-        val sizePx = (VIEW_SIZE_DP * density).roundToInt()
+        val circleSizePx = (CIRCLE_SIZE_DP * density)
+        val petSizePx = (PET_SIZE_DP * density)
+        maxRadiusPx = (circleSizePx / 2f) - (petSizePx / 2f) - BOUNDARY_INSET_DP * density
 
-        val view = TriangleOverlayView(this, character.color.toArgb())
+        val view = CircleBoundedPetView(this, character.color.toArgb(), petSizePx)
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
+        val sizePx = circleSizePx.roundToInt()
         val params = WindowManager.LayoutParams(
             sizePx,
             sizePx,
             overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -98,45 +103,62 @@ class FloatingPetService : Service() {
             y = ((resources.displayMetrics.heightPixels - sizePx) / 2f).roundToInt()
         }
 
+        view.onHandleDrag = { dx, dy -> moveOverlayBy(dx, dy) }
+
         windowManager.addView(view, params)
         overlayView = view
         layoutParams = params
-        currentX = params.x.toFloat()
-        currentY = params.y.toFloat()
-        pickNewTarget(sizePx)
+        pickNewTarget()
 
         handler.removeCallbacks(moveRunnable)
         handler.post(moveRunnable)
     }
 
-    private fun step() {
+    private fun moveOverlayBy(dx: Float, dy: Float) {
+        val view = overlayView ?: return
         val params = layoutParams ?: return
+        val maxX = (resources.displayMetrics.widthPixels - view.width).coerceAtLeast(0)
+        val maxY = (resources.displayMetrics.heightPixels - view.height).coerceAtLeast(0)
+        params.x = (params.x + dx.roundToInt()).coerceIn(0, maxX)
+        params.y = (params.y + dy.roundToInt()).coerceIn(0, maxY)
+        runCatching { windowManager.updateViewLayout(view, params) }
+    }
+
+    private fun step() {
         val view = overlayView ?: return
         elapsedMs += FRAME_DELAY_MS
 
         val dx = targetX - currentX
         val dy = targetY - currentY
-        val distance = kotlin.math.hypot(dx, dy)
+        val distance = hypot(dx, dy)
 
         if (distance < SPEED_PX_PER_FRAME) {
-            pickNewTarget(view.width.takeIf { it > 0 } ?: (VIEW_SIZE_DP * resources.displayMetrics.density).roundToInt())
+            pickNewTarget()
         } else {
             currentX += dx / distance * SPEED_PX_PER_FRAME
             currentY += dy / distance * SPEED_PX_PER_FRAME
         }
 
-        val bob = sin(elapsedMs / BOB_PERIOD_MS * (2 * Math.PI)) * BOB_AMPLITUDE_PX
+        val bob = (sin(elapsedMs / BOB_PERIOD_MS * (2 * Math.PI)) * BOB_AMPLITUDE_PX).toFloat()
+        val bobbedY = if (hypot(currentX, currentY + bob) <= maxRadiusPx) currentY + bob else currentY
 
-        params.x = currentX.roundToInt()
-        params.y = (currentY + bob).roundToInt()
-        runCatching { windowManager.updateViewLayout(view, params) }
+        view.setPetOffset(currentX, bobbedY)
     }
 
-    private fun pickNewTarget(sizePx: Int) {
-        val maxX = (resources.displayMetrics.widthPixels - sizePx).coerceAtLeast(0)
-        val maxY = (resources.displayMetrics.heightPixels - sizePx).coerceAtLeast(0)
-        targetX = Random.nextInt(0, maxX + 1).toFloat()
-        targetY = Random.nextInt(0, maxY + 1).toFloat()
+    private fun pickNewTarget() {
+        if (maxRadiusPx <= 0f) {
+            targetX = 0f
+            targetY = 0f
+            return
+        }
+        var x: Float
+        var y: Float
+        do {
+            x = Random.nextFloat() * 2f * maxRadiusPx - maxRadiusPx
+            y = Random.nextFloat() * 2f * maxRadiusPx - maxRadiusPx
+        } while (hypot(x, y) > maxRadiusPx)
+        targetX = x
+        targetY = y
     }
 
     private fun buildNotification(): Notification {
@@ -160,7 +182,7 @@ class FloatingPetService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.presence_online)
-            .setContentTitle("캐릭터가 화면 위를 돌아다니고 있어요")
+            .setContentTitle("캐릭터가 원 안에서 돌아다니고 있어요")
             .setContentText("탭하면 멈출 수 있어요")
             .setOngoing(true)
             .addAction(0, "멈추기", stopPendingIntent)
@@ -172,10 +194,12 @@ class FloatingPetService : Service() {
         const val EXTRA_CHARACTER = "com.example.mobimon.extra.CHARACTER"
         private const val CHANNEL_ID = "floating_pet_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val VIEW_SIZE_DP = 72
+        private const val CIRCLE_SIZE_DP = 120
+        private const val PET_SIZE_DP = 32
+        private const val BOUNDARY_INSET_DP = 10
         private const val FRAME_DELAY_MS = 16L
-        private const val SPEED_PX_PER_FRAME = 4f
+        private const val SPEED_PX_PER_FRAME = 3f
         private const val BOB_PERIOD_MS = 1500.0
-        private const val BOB_AMPLITUDE_PX = 12.0
+        private const val BOB_AMPLITUDE_PX = 8.0
     }
 }
