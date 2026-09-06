@@ -24,3 +24,13 @@ dependencyResolutionManagement {
 
 rootProject.name = "MobiMon"
 include(":app")
+
+include(":core:core-domain")
+include(":core:core-ui")
+include(":core:core-vss")
+include(":core:core-database")
+
+include(":feature:feature-pet")
+include(":feature:feature-overlay")
+include(":feature:feature-vehicle-info")
+include(":feature:feature-voice")

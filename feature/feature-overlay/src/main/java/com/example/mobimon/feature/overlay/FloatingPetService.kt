@@ -1,4 +1,4 @@
-package com.example.mobimon
+package com.example.mobimon.feature.overlay
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -13,8 +13,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
+import com.example.mobimon.core.domain.pet.CharacterType
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -73,7 +73,7 @@ class FloatingPetService : Service() {
     private fun showOrUpdateOverlay(character: CharacterType) {
         val existing = overlayView
         if (existing != null) {
-            existing.color = character.color.toArgb()
+            existing.color = character.colorArgb
             return
         }
 
@@ -82,7 +82,7 @@ class FloatingPetService : Service() {
         val petSizePx = (PET_SIZE_DP * density)
         maxRadiusPx = (circleSizePx / 2f) - (petSizePx / 2f) - BOUNDARY_INSET_DP * density
 
-        val view = CircleBoundedPetView(this, character.color.toArgb(), petSizePx)
+        val view = CircleBoundedPetView(this, character.colorArgb, petSizePx)
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
